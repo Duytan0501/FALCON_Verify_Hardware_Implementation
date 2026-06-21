@@ -1,0 +1,78 @@
+K:/HK6/CE201/FALCON/Modelsim/ntt_tb.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/ntt_tb.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module ntt_tb
+
+Top level modules:
+	ntt_tb
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/is_short.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/is_short.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module is_short_engine
+
+Top level modules:
+	is_short_engine
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/mq_normalize.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/mq_normalize.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module mq_normalize
+
+Top level modules:
+	mq_normalize
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/mq_sub.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/mq_sub.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module mq_sub
+
+Top level modules:
+	mq_sub
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/mq_conv_small.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/mq_conv_small.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module mq_conv_small
+
+Top level modules:
+	mq_conv_small
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/mq_ntt.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/mq_ntt.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module ntt_engine
+
+Top level modules:
+	ntt_engine
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/verify.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/verify.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module verify
+
+Top level modules:
+	verify
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/mq_add.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/mq_add.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module mq_add
+
+Top level modules:
+	mq_add
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/poly_convert_s2.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/poly_convert_s2.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module poly_convert_s2
+
+Top level modules:
+	poly_convert_s2
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/poly_sub_norm.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/poly_sub_norm.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module poly_sub_norm
+
+Top level modules:
+	poly_sub_norm
+
+} {} {}} K:/HK6/CE201/FALCON/Modelsim/mq_monty_mul.v {1 {vlog -work work K:/HK6/CE201/FALCON/Modelsim/mq_monty_mul.v
+Model Technology ModelSim ALTERA vlog 10.1d Compiler 2012.11 Nov  2 2012
+-- Compiling module mq_montymul
+
+Top level modules:
+	mq_montymul
+
+} {} {}}
