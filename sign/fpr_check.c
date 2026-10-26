@@ -29,6 +29,70 @@ uint64_t rand64()
 {
     return ((uint64_t)rand() << 32) | rand();
 }
+static inline uint64_t fpr_ursh(uint64_t x, int n)
+{
+    x ^= (x ^ (x >> 32)) & -(uint64_t)(n >> 5);
+    return x >> (n & 31);
+}
+
+static inline int64_t fpr_irsh(int64_t x, int n)
+{
+    x ^= (x ^ (x >> 32)) & -(int64_t)(n >> 5);
+    return x >> (n & 31);
+}
+
+static inline uint64_t fpr_ulsh(uint64_t x, int n)
+{
+    x ^= (x ^ (x << 32)) & -(uint64_t)(n >> 5);
+    return x << (n & 31);
+}
+
+// --- Thêm 3 hàm cần test từ fpr_2.h ---
+static inline int64_t fpr_trunc(fpr x)
+{
+    uint64_t t, xu;
+    int e, cc;
+    e = (int)(x >> 52) & 0x7FF;
+    xu = ((x << 10) | ((uint64_t)1 << 62)) & (((uint64_t)1 << 63) - 1);
+    cc = 1085 - e;
+    xu = fpr_ursh(xu, cc & 63);
+    xu &= -(uint64_t)((uint32_t)(cc - 64) >> 31);
+    t = x >> 63;
+    xu = (xu ^ -t) + t;
+    return *(int64_t *)&xu;
+}
+
+static inline int64_t fpr_floor(fpr x)
+{
+    uint64_t t;
+    int64_t xi;
+    int e, cc;
+    e = (int)(x >> 52) & 0x7FF;
+    t = x >> 63;
+    xi = (int64_t)(((x << 10) | ((uint64_t)1 << 62)) & (((uint64_t)1 << 63) - 1));
+    xi = (xi ^ -(int64_t)t) + (int64_t)t;
+    cc = 1085 - e;
+    xi = fpr_irsh(xi, cc & 63);
+    xi ^= (xi ^ -(int64_t)t) & -(int64_t)((uint32_t)(63 - cc) >> 31);
+    return xi;
+}
+
+static inline int64_t fpr_rint(fpr x)
+{
+    uint64_t m, d;
+    int e;
+    uint32_t s, dd, f;
+    m = ((x << 10) | ((uint64_t)1 << 62)) & (((uint64_t)1 << 63) - 1);
+    e = 1085 - ((int)(x >> 52) & 0x7FF);
+    m &= -(uint64_t)((uint32_t)(e - 64) >> 31);
+    e &= 63;
+    d = fpr_ulsh(m, 63 - e);
+    dd = (uint32_t)d | ((uint32_t)(d >> 32) & 0x1FFFFFFF);
+    f = (uint32_t)(d >> 61) | ((dd | -dd) >> 31);
+    m = fpr_ursh(m, e) + (uint64_t)((0xC8U >> f) & 1U);
+    s = (uint32_t)(x >> 63);
+    return ((int64_t)m ^ -(int64_t)s) + (int64_t)s;
+}
 int main()
 {
     srand(time(NULL));
@@ -57,7 +121,21 @@ int main()
         fprintf(f_pack, "%x %08x %016llx %016llx\n", s, (uint32_t)e, m, z);
     }
     fclose(f_pack);
+    FILE *f_round = fopen("test_round.txt", "w");
+    for (int i = 0; i < num_tests; i++)
+    {
+        fpr x = rand64();
+        if (i % 2 == 0)
+        {
+            uint64_t e_test = 1023 + (rand() % 100);
+            x = (x & ~(0x7FFULL << 52)) | (e_test << 52);
+        }
+        int64_t z_trunc = fpr_trunc(x);
+        int64_t z_floor = fpr_floor(x);
+        int64_t z_rint = fpr_rint(x);
 
-    printf("Dump thanh cong test_lt.txt va test_pack.txt!\n");
+        fprintf(f_round, "%016llx %016llx %016llx %016llx\n", x, (uint64_t)z_trunc, (uint64_t)z_floor, (uint64_t)z_rint);
+    }
+    fclose(f_round);
     return 0;
 }

@@ -14,7 +14,7 @@ module fpr_pack (
     wire [63:0]        x_base;
     wire [2:0]         f;
     wire               round_bit;
-    assign e_plus_1076 = e + 32'd1076;
+    assign e_plus_1076 = e + 32'sd1076;
     assign t1 = e_plus_1076[31];
     assign m_adj = t1 ? 64'd0 : m; 
     assign t2 = m_adj[54]; 
