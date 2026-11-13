@@ -82,7 +82,6 @@ module is_short_engine (
 
                 DRAIN: begin
                     if (!valid_q1) begin
-                        // Logic bão hòa của C: s |= -(ng >> 31);
                         if (ng_flag) norm_out <= 32'hFFFFFFFF;
                         
                         valid_sig <= ((ng_flag ? 32'hFFFFFFFF : norm_out) <= SIG_BOUND) ? 1'b1 : 1'b0;

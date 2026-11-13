@@ -29,7 +29,7 @@ module verify_tb();
         .ram_s1_addr(ram_s1_addr), .ram_s1_rdata(ram_s1_rdata),
         .ram_s1_wdata(ram_s1_wdata), .ram_s1_we(ram_s1_we)
     );
-    initial begin clk = 0; forever #5 clk = ~clk; end
+    initial begin clk = 0; forever #10 clk = ~clk; end
     always @(posedge clk) begin
         ram_s2_rdata   <= mem_s2[ram_s2_addr];
         ram_h_rdata    <= mem_h[ram_h_addr];
@@ -49,6 +49,7 @@ module verify_tb();
         if (uut.ntt_done)  for (i=0; i<512; i=i+1) snap_p2[i] = mem_tt[i];
     end
     integer fd, k;
+    integer scan_ret; // Khai báo biến hứng giá trị trả về của $fscanf
     integer err_p1, err_p2, err_p3;
     reg [2:0] stat_p1, stat_p2, stat_p3;
     integer cycle_count; 
@@ -76,20 +77,19 @@ module verify_tb();
         err_p1 = 0; err_p2 = 0; err_p3 = 0;
         rst_n = 0; start = 0;
         #100; rst_n = 1; #20;
-        start = 1; #10; start = 0;
+        start = 1; #20; start = 0;
         wait(done == 1'b1);
         #10;
         fd = $fopen("tb_norm.txt", "r");
         if (fd) begin
-            $fscanf(fd, "%h", expected_norm);
+            scan_ret = $fscanf(fd, "%h", expected_norm); // Gán vào scan_ret
             $fclose(fd);
         end
         $display("");
         $display("=====================================================================================");
-        $display("Idx |    Phase 1 (Convert)    |      Phase 2 (NTT)      |    Phase 3 (-s1 Norm)   ");
+        $display("|    Phase 1 (Convert)    |      Phase 2 (NTT)      |    Phase 3 (-s1 Norm)   ");
         $display("    | HW Output vs C Expected | HW Output vs C Expected | HW Output vs C Expected ");
         $display("=====================================================================================");
-
         for (k = 0; k < 512; k = k + 1) begin
             if (snap_p1[k] !== exp_p1[k]) err_p1 = err_p1 + 1;
             if (snap_p2[k] !== exp_p2[k]) err_p2 = err_p2 + 1;
