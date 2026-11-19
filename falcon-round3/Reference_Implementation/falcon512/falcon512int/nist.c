@@ -8,10 +8,10 @@
 
 #include "api.h"
 #include "inner.h"
-#include <stdio.h>      
-#include <time.h>       
-#include <x86intrin.h>  
-#define NONCELEN   40
+#include <stdio.h>
+#include <time.h>
+#include <x86intrin.h>
+#define NONCELEN 40
 
 /*
  * If stack usage is an issue, define TEMPALLOC to static in order to
@@ -23,14 +23,14 @@
 #define TEMPALLOC
 
 void randombytes_init(unsigned char *entropy_input,
-	unsigned char *personalization_string,
-	int security_strength);
+					  unsigned char *personalization_string,
+					  int security_strength);
 int randombytes(unsigned char *x, unsigned long long xlen);
 
-int
-crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
+int crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
 {
-	TEMPALLOC union {
+	TEMPALLOC union
+	{
 		uint8_t b[FALCON_KEYGEN_TEMP_9];
 		uint64_t dummy_u64;
 		fpr dummy_fpr;
@@ -41,7 +41,6 @@ crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
 	TEMPALLOC inner_shake256_context rng;
 	size_t u, v;
 
-
 	/*
 	 * Generate key pair.
 	 */
@@ -51,31 +50,34 @@ crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
 	inner_shake256_flip(&rng);
 	Zf(keygen)(&rng, f, g, F, NULL, h, 9, tmp.b);
 
-
 	/*
 	 * Encode private key.
 	 */
 	sk[0] = 0x50 + 9;
 	u = 1;
 	v = Zf(trim_i8_encode)(sk + u, CRYPTO_SECRETKEYBYTES - u,
-		f, 9, Zf(max_fg_bits)[9]);
-	if (v == 0) {
+						   f, 9, Zf(max_fg_bits)[9]);
+	if (v == 0)
+	{
 		return -1;
 	}
 	u += v;
 	v = Zf(trim_i8_encode)(sk + u, CRYPTO_SECRETKEYBYTES - u,
-		g, 9, Zf(max_fg_bits)[9]);
-	if (v == 0) {
+						   g, 9, Zf(max_fg_bits)[9]);
+	if (v == 0)
+	{
 		return -1;
 	}
 	u += v;
 	v = Zf(trim_i8_encode)(sk + u, CRYPTO_SECRETKEYBYTES - u,
-		F, 9, Zf(max_FG_bits)[9]);
-	if (v == 0) {
+						   F, 9, Zf(max_FG_bits)[9]);
+	if (v == 0)
+	{
 		return -1;
 	}
 	u += v;
-	if (u != CRYPTO_SECRETKEYBYTES) {
+	if (u != CRYPTO_SECRETKEYBYTES)
+	{
 		return -1;
 	}
 
@@ -84,25 +86,27 @@ crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
 	 */
 	pk[0] = 0x00 + 9;
 	v = Zf(modq_encode)(pk + 1, CRYPTO_PUBLICKEYBYTES - 1, h, 9);
-	if (v != CRYPTO_PUBLICKEYBYTES - 1) {
+	if (v != CRYPTO_PUBLICKEYBYTES - 1)
+	{
 		return -1;
 	}
 
 	return 0;
 }
 
-int
-crypto_sign(unsigned char *sm, unsigned long long *smlen,
-	const unsigned char *m, unsigned long long mlen,
-	const unsigned char *sk)
+int crypto_sign(unsigned char *sm, unsigned long long *smlen,
+				const unsigned char *m, unsigned long long mlen,
+				const unsigned char *sk)
 {
-	TEMPALLOC union {
+	TEMPALLOC union
+	{
 		uint8_t b[72 * 512];
 		uint64_t dummy_u64;
 		fpr dummy_fpr;
 	} tmp;
 	TEMPALLOC int8_t f[512], g[512], F[512], G[512];
-	TEMPALLOC union {
+	TEMPALLOC union
+	{
 		int16_t sig[512];
 		uint16_t hm[512];
 	} r;
@@ -114,32 +118,38 @@ crypto_sign(unsigned char *sm, unsigned long long *smlen,
 	/*
 	 * Decode the private key.
 	 */
-	if (sk[0] != 0x50 + 9) {
+	if (sk[0] != 0x50 + 9)
+	{
 		return -1;
 	}
 	u = 1;
 	v = Zf(trim_i8_decode)(f, 9, Zf(max_fg_bits)[9],
-		sk + u, CRYPTO_SECRETKEYBYTES - u);
-	if (v == 0) {
+						   sk + u, CRYPTO_SECRETKEYBYTES - u);
+	if (v == 0)
+	{
 		return -1;
 	}
 	u += v;
 	v = Zf(trim_i8_decode)(g, 9, Zf(max_fg_bits)[9],
-		sk + u, CRYPTO_SECRETKEYBYTES - u);
-	if (v == 0) {
+						   sk + u, CRYPTO_SECRETKEYBYTES - u);
+	if (v == 0)
+	{
 		return -1;
 	}
 	u += v;
 	v = Zf(trim_i8_decode)(F, 9, Zf(max_FG_bits)[9],
-		sk + u, CRYPTO_SECRETKEYBYTES - u);
-	if (v == 0) {
+						   sk + u, CRYPTO_SECRETKEYBYTES - u);
+	if (v == 0)
+	{
 		return -1;
 	}
 	u += v;
-	if (u != CRYPTO_SECRETKEYBYTES) {
+	if (u != CRYPTO_SECRETKEYBYTES)
+	{
 		return -1;
 	}
-	if (!Zf(complete_private)(G, f, g, F, 9, tmp.b)) {
+	if (!Zf(complete_private)(G, f, g, F, 9, tmp.b))
+	{
 		return -1;
 	}
 
@@ -165,12 +175,10 @@ crypto_sign(unsigned char *sm, unsigned long long *smlen,
 	inner_shake256_inject(&sc, seed, sizeof seed);
 	inner_shake256_flip(&sc);
 
-
 	/*
 	 * Compute the signature.
 	 */
 	Zf(sign_dyn)(r.sig, &sc, f, g, F, G, r.hm, 9, tmp.b);
-
 
 	/*
 	 * Encode the signature and bundle it with the message. Format is:
@@ -181,10 +189,11 @@ crypto_sign(unsigned char *sm, unsigned long long *smlen,
 	 */
 	esig[0] = 0x20 + 9;
 	sig_len = Zf(comp_encode)(esig + 1, (sizeof esig) - 1, r.sig, 9);
-	if (sig_len == 0) {
+	if (sig_len == 0)
+	{
 		return -1;
 	}
-	sig_len ++;
+	sig_len++;
 	memmove(sm + 2 + sizeof nonce, m, mlen);
 	sm[0] = (unsigned char)(sig_len >> 8);
 	sm[1] = (unsigned char)sig_len;
@@ -194,12 +203,12 @@ crypto_sign(unsigned char *sm, unsigned long long *smlen,
 	return 0;
 }
 
-int
-crypto_sign_open(unsigned char *m, unsigned long long *mlen,
-	const unsigned char *sm, unsigned long long smlen,
-	const unsigned char *pk)
+int crypto_sign_open(unsigned char *m, unsigned long long *mlen,
+					 const unsigned char *sm, unsigned long long smlen,
+					 const unsigned char *pk)
 {
-	TEMPALLOC union {
+	TEMPALLOC union
+	{
 		uint8_t b[2 * 512];
 		uint64_t dummy_u64;
 		fpr dummy_fpr;
@@ -213,11 +222,11 @@ crypto_sign_open(unsigned char *m, unsigned long long *mlen,
 	/*
 	 * Decode public key.
 	 */
-	if (pk[0] != 0x00 + 9) {
+	if (pk[0] != 0x00 + 9)
+	{
 		return -1;
 	}
-	if (Zf(modq_decode)(h, 9, pk + 1, CRYPTO_PUBLICKEYBYTES - 1)
-		!= CRYPTO_PUBLICKEYBYTES - 1)
+	if (Zf(modq_decode)(h, 9, pk + 1, CRYPTO_PUBLICKEYBYTES - 1) != CRYPTO_PUBLICKEYBYTES - 1)
 	{
 		return -1;
 	}
@@ -226,11 +235,13 @@ crypto_sign_open(unsigned char *m, unsigned long long *mlen,
 	/*
 	 * Find nonce, signature, message length.
 	 */
-	if (smlen < 2 + NONCELEN) {
+	if (smlen < 2 + NONCELEN)
+	{
 		return -1;
 	}
 	sig_len = ((size_t)sm[0] << 8) | (size_t)sm[1];
-	if (sig_len > (smlen - 2 - NONCELEN)) {
+	if (sig_len > (smlen - 2 - NONCELEN))
+	{
 		return -1;
 	}
 	msg_len = smlen - 2 - NONCELEN - sig_len;
@@ -239,15 +250,41 @@ crypto_sign_open(unsigned char *m, unsigned long long *mlen,
 	 * Decode signature.
 	 */
 	esig = sm + 2 + NONCELEN + msg_len;
-	if (sig_len < 1 || esig[0] != 0x20 + 9) {
-		return -1;
-	}
-	if (Zf(comp_decode)(sig, 9,
-		esig + 1, sig_len - 1) != sig_len - 1)
+	if (sig_len < 1 || esig[0] != 0x20 + 9)
 	{
 		return -1;
 	}
+	if (Zf(comp_decode)(sig, 9,
+						esig + 1, sig_len - 1) != sig_len - 1)
+	{
+		return -1;
+	}
+	{
+		static int decomp_cnt = 0;
+		if (decomp_cnt == 2)
+		{
+			size_t comp_len = sig_len - 1;
+			printf("[DUMP DECOMPRESS] comp_len = %zu bytes (max 625)\n", comp_len);
 
+			// 1. Dump đầu vào 625 byte cho mem_sig (tự đệm 0x00 cho đủ 625 byte)
+			FILE *f_comp = fopen("tb_sig_comp.txt", "w");
+			for (size_t i = 0; i < 625; i++)
+			{
+				uint8_t b = (i < comp_len) ? esig[1 + i] : 0x00;
+				fprintf(f_comp, "%02X\n", b);
+			}
+			fclose(f_comp);
+
+			// 2. Dump đầu ra 512 hệ số chuẩn cho exp_s2
+			FILE *f_s2_exp = fopen("tb_s2_exp.txt", "w");
+			for (int i = 0; i < 512; i++)
+			{
+				fprintf(f_s2_exp, "%04X\n", (uint16_t)sig[i]);
+			}
+			fclose(f_s2_exp);
+		}
+		decomp_cnt++;
+	}
 	/*
 	 * Hash nonce + message into a vector.
 	 */
@@ -259,7 +296,8 @@ crypto_sign_open(unsigned char *m, unsigned long long *mlen,
 	/*
 	 * Verify signature.
 	 */
-	if (!Zf(verify_raw)(hm, sig, h, 9, tmp.b)) {
+	if (!Zf(verify_raw)(hm, sig, h, 9, tmp.b))
+	{
 		return -1;
 	}
 
