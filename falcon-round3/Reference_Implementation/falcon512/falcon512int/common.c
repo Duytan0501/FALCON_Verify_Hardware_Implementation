@@ -279,13 +279,6 @@ Zf(is_short)(
 		ng |= s;
 	}
 	s |= -(ng >> 31);
-	static int counter = 0;
-	if (counter == 2) {
-		FILE *f_norm = fopen("tb_norm.txt", "w");
-		fprintf(f_norm, "%08X\n", s);
-		fclose(f_norm);
-	}
-	counter++;
 	return s <= l2bound[logn];
 }
 

@@ -9,7 +9,7 @@ module is_short_engine (
     output wire [8:0]  ram_s2_addr,
     input  wire [15:0] ram_s2_rdata,
     
-    output reg  [31:0] norm_out, // 32-bit để khớp 100% với uint32_t s
+    output reg  [31:0] norm_out, 
     output reg         valid_sig,
     output reg         done
 );
@@ -29,11 +29,13 @@ module is_short_engine (
     assign ram_s1_addr = rd_cnt[8:0];
     assign ram_s2_addr = rd_cnt[8:0];
 
-    // Ép kiểu lên 32-bit có dấu trước khi nhân (tương đương int32_t z trong C)
-    wire signed [31:0] s1_32 = $signed(ram_s1_rdata);
-    wire signed [31:0] s2_32 = $signed(ram_s2_rdata);
-    
-    wire [31:0] current_sum = norm_out + (s1_32 * s1_32) + (s2_32 * s2_32);
+    wire signed [15:0] s1_s  = ram_s1_rdata;
+    wire signed [15:0] s2_s  = ram_s2_rdata;
+    wire signed [31:0] s1_sq = s1_s * s1_s;
+    wire signed [31:0] s2_sq = s2_s * s2_s;
+
+    wire [31:0] sum_after_s1 = norm_out + s1_sq;
+    wire [31:0] sum_after_s2 = sum_after_s1 + s2_sq;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) valid_q1 <= 1'b0;
@@ -51,11 +53,9 @@ module is_short_engine (
             done      <= 1'b0;
         end else begin
             done <= 1'b0;
-            
-            // Tích lũy (Chỉ trễ 1 nhịp để ăn khớp với RAM)
-            if (valid_q1) begin
-                norm_out <= current_sum;
-                ng_flag  <= ng_flag | current_sum[31]; // ng |= s;
+        if (valid_q1) begin
+                norm_out <= sum_after_s2;
+                ng_flag  <= ng_flag | sum_after_s1[31] | sum_after_s2[31];
             end
 
             case (state)

@@ -13,7 +13,11 @@ module ntt_engine (
     output reg         ram_we_b,
     output reg  [8:0]  ram_h_addr,
     input  wire [15:0] ram_h_rdata,
-    output reg         done
+    output reg         done,
+    input  wire        mode_tomonty,
+    input  wire        abort,
+    output wire [15:0] ram_h_wdata,
+    output reg         ram_h_we
 );
     localparam IDLE        = 5'd0;
     localparam NTT_OUTER   = 5'd1;
@@ -58,8 +62,10 @@ module ntt_engine (
     reg [15:0] ram_wdata_b_reg;
     assign ram_wdata_a = ram_wdata_a_reg;
     assign ram_wdata_b = ram_wdata_b_reg;
+    assign ram_h_wdata = ram_wdata_a_reg;
     reg [15:0] GMb [0:511];
     reg [15:0] iGMb [0:511];
+    reg mode_reg;
  initial begin
         GMb[  0]=16'd4091;  GMb[  1]=16'd7888;  GMb[  2]=16'd11060; GMb[  3]=16'd11208; GMb[  4]=16'd6960;  GMb[  5]=16'd4342;  GMb[  6]=16'd6275;  GMb[  7]=16'd9759; 
         GMb[  8]=16'd1591;  GMb[  9]=16'd6399;  GMb[ 10]=16'd9477;  GMb[ 11]=16'd5266;  GMb[ 12]=16'd586;   GMb[ 13]=16'd5825;  GMb[ 14]=16'd7538;  GMb[ 15]=16'd9710; 
@@ -232,7 +238,7 @@ module ntt_engine (
             end
             FIN_WAIT, FIN_WRITE: begin
                 mul_x = ram_rdata_a;
-                mul_y = 16'd128; 
+                mul_y = mode_reg ? 16'd10952 : 16'd128;
             end
         endcase
     end
@@ -244,157 +250,174 @@ module ntt_engine (
             ram_we_b        <= 1'b0;
             ram_wdata_a_reg <= 16'd0;
             ram_wdata_b_reg <= 16'd0;
+            ram_addr_a <= 9'd0; 
+            ram_addr_b <= 9'd0;
+            ram_h_addr <= 9'd0;
+            ram_h_we <= 1'b0;
+            mode_reg <= 1'b0;
         end else begin
             ram_we_a <= 1'b0;
             ram_we_b <= 1'b0;
-            case (state)
-                IDLE: begin
-                    done <= 1'b0;
-                    if (start) begin
-                        t     <= 10'd512;
-                        m     <= 10'd1;
-                        state <= NTT_OUTER;
+            ram_h_we <= 1'b0;
+            done     <= 1'b0;
+            if (abort) begin
+                state <= IDLE;
+            end else begin
+                case (state)
+                    IDLE: begin
+                        if (start) begin
+                            mode_reg <= mode_tomonty;
+                            t        <= 10'd512;
+                            m        <= 10'd1;
+                            state    <= NTT_OUTER;
+                        end
                     end
-                end
-                NTT_OUTER: begin
-                    if (m < 10'd512) begin
-                        ht    <= t >> 1;
-                        i     <= 10'd0;
-                        j1    <= 10'd0;
-                        state <= NTT_MID;
-                    end else begin
-                        u_cnt <= 10'd0;
-                        state <= PWM_READ;
+                    NTT_OUTER: begin
+                        if (m < 10'd512) begin
+                            ht    <= t >> 1;
+                            i     <= 10'd0;
+                            j1    <= 10'd0;
+                            state <= NTT_MID;
+                        end else begin
+                            u_cnt <= 10'd0;
+                            state <= mode_reg ? FIN_READ : PWM_READ;
+                        end
                     end
-                end
-                NTT_MID: begin
-                    if (i < m) begin
-                        s_const <= GMb[m + i];
-                        j       <= j1;
-                        j2      <= j1 + (t >> 1);
-                        state   <= NTT_READ;
-                    end else begin
-                        t     <= t >> 1;
-                        m     <= m << 1;
-                        state <= NTT_OUTER;
+                    NTT_MID: begin
+                        if (i < m) begin
+                            s_const <= GMb[m + i];
+                            j       <= j1;
+                            j2      <= j1 + (t >> 1);
+                            state   <= NTT_READ;
+                        end else begin
+                            t     <= t >> 1;
+                            m     <= m << 1;
+                            state <= NTT_OUTER;
+                        end
                     end
-                end
-                NTT_READ: begin
-                    if (j < j2) begin
-                        ram_addr_a <= j[8:0];
-                        ram_addr_b <= j + ht;
-                        state      <= NTT_WAIT;
-                    end else begin
-                        i     <= i + 1'b1;
-                        j1    <= j1 + t;
-                        state <= NTT_MID;
+                    NTT_READ: begin
+                        if (j < j2) begin
+                            ram_addr_a <= j[8:0];
+                            ram_addr_b <= j[8:0] + ht[8:0];
+                            state      <= NTT_WAIT;
+                        end else begin
+                            i     <= i + 1'b1;
+                            j1    <= j1 + t;
+                            state <= NTT_MID;
+                        end
                     end
-                end
-                NTT_WAIT: begin
-                    state <= NTT_WRITE;
-                end
-                NTT_WRITE: begin
-                    ram_addr_a      <= j[8:0];
-                    ram_addr_b      <= j + ht;
-                    ram_wdata_a_reg <= add_z;  
-                    ram_wdata_b_reg <= sub_z;  
-                    ram_we_a        <= 1'b1;
-                    ram_we_b        <= 1'b1;
-                    j               <= j + 1'b1;
-                    state           <= NTT_READ;
-                end
-                PWM_READ: begin
-                    if (u_cnt < 10'd512) begin
-                        ram_addr_a <= u_cnt[8:0];
-                        ram_h_addr <= u_cnt[8:0];
-                        state      <= PWM_WAIT;
-                    end else begin
-                        t     <= 10'd1;
-                        m     <= 10'd512;
-                        state <= INTT_OUTER;
+                    NTT_WAIT: begin
+                        state <= NTT_WRITE;
                     end
-                end
-                PWM_WAIT: begin
-                    state <= PWM_WRITE;
-                end
-                PWM_WRITE: begin
-                    ram_addr_a      <= u_cnt[8:0];
-                    ram_wdata_a_reg <= mul_z;  
-                    ram_we_a        <= 1'b1;
-                    u_cnt           <= u_cnt + 1'b1;
-                    state           <= PWM_READ;
-                end
-                INTT_OUTER: begin
-                    if (m > 10'd1) begin
-                        hm    <= m >> 1;
-                        dt    <= t << 1;
-                        i     <= 10'd0;
-                        j1    <= 10'd0;
-                        state <= INTT_MID;
-                    end else begin
-                        u_cnt <= 10'd0;
+                    NTT_WRITE: begin
+                        ram_addr_a      <= j[8:0];
+                        ram_addr_b <= j[8:0] + ht[8:0];
+                        ram_wdata_a_reg <= add_z;  
+                        ram_wdata_b_reg <= sub_z;  
+                        ram_we_a        <= 1'b1;
+                        ram_we_b        <= 1'b1;
+                        j               <= j + 1'b1;
+                        state           <= NTT_READ;
+                    end
+                    PWM_READ: begin
+                        if (u_cnt < 10'd512) begin
+                            ram_addr_a <= u_cnt[8:0];
+                            ram_h_addr <= u_cnt[8:0];
+                            state      <= PWM_WAIT;
+                        end else begin
+                            t     <= 10'd1;
+                            m     <= 10'd512;
+                            state <= INTT_OUTER;
+                        end
+                    end
+                    PWM_WAIT: begin
+                        state <= PWM_WRITE;
+                    end
+                    PWM_WRITE: begin
+                        ram_addr_a      <= u_cnt[8:0];
+                        ram_wdata_a_reg <= mul_z;  
+                        ram_we_a        <= 1'b1;
+                        u_cnt           <= u_cnt + 1'b1;
+                        state           <= PWM_READ;
+                    end
+                    INTT_OUTER: begin
+                        if (m > 10'd1) begin
+                            hm    <= m >> 1;
+                            dt    <= t << 1;
+                            i     <= 10'd0;
+                            j1    <= 10'd0;
+                            state <= INTT_MID;
+                        end else begin
+                            u_cnt <= 10'd0;
+                            state <= FIN_READ;
+                        end
+                    end
+                    INTT_MID: begin
+                        if (i < hm) begin
+                            s_const <= iGMb[hm + i];
+                            j       <= j1;
+                            j2      <= j1 + t;
+                            state   <= INTT_READ;
+                        end else begin
+                            t     <= t << 1;
+                            m     <= m >> 1;
+                            state <= INTT_OUTER;
+                        end
+                    end
+                    INTT_READ: begin
+                        if (j < j2) begin
+                            ram_addr_a <= j[8:0];
+                            ram_addr_b <= j[8:0] + t[8:0];
+                            state      <= INTT_WAIT;
+                        end else begin
+                            i     <= i + 1'b1;
+                            j1    <= j1 + dt;
+                            state <= INTT_MID;
+                        end
+                    end
+                    INTT_WAIT: begin
+                        state <= INTT_WRITE;
+                    end
+                    INTT_WRITE: begin
+                        ram_addr_a      <= j[8:0];
+                        ram_addr_b      <= j[8:0] + t[8:0];
+                        ram_wdata_a_reg <= add_z;  
+                        ram_wdata_b_reg <= mul_z;  
+                        ram_we_a        <= 1'b1;
+                        ram_we_b        <= 1'b1;
+                        j               <= j + 1'b1;
+                        state           <= INTT_READ;
+                    end
+                    FIN_READ: begin
+                        if (u_cnt < 10'd512) begin
+                            ram_addr_a <= u_cnt[8:0];
+                            state      <= FIN_WAIT;
+                        end else begin
+                            state <= DONE_STATE;
+                        end
+                    end
+                    FIN_WAIT: begin
+                        state <= FIN_WRITE;
+                    end
+                    FIN_WRITE: begin
+                        if (mode_reg) begin
+                            ram_h_addr      <= u_cnt[8:0];
+                            ram_wdata_a_reg <= mul_z;
+                            ram_h_we        <= 1'b1;
+                        end else begin
+                            ram_addr_a      <= u_cnt[8:0];
+                            ram_wdata_a_reg <= mul_z;
+                            ram_we_a        <= 1'b1;
+                        end
+                        u_cnt <= u_cnt + 1'b1;
                         state <= FIN_READ;
                     end
-                end
-                INTT_MID: begin
-                    if (i < hm) begin
-                        s_const <= iGMb[hm + i];
-                        j       <= j1;
-                        j2      <= j1 + t;
-                        state   <= INTT_READ;
-                    end else begin
-                        t     <= t << 1;
-                        m     <= m >> 1;
-                        state <= INTT_OUTER;
+                    DONE_STATE: begin
+                        done  <= 1'b1;
+                        state <= IDLE;
                     end
-                end
-                INTT_READ: begin
-                    if (j < j2) begin
-                        ram_addr_a <= j[8:0];
-                        ram_addr_b <= j + t;
-                        state      <= INTT_WAIT;
-                    end else begin
-                        i     <= i + 1'b1;
-                        j1    <= j1 + dt;
-                        state <= INTT_MID;
-                    end
-                end
-                INTT_WAIT: begin
-                    state <= INTT_WRITE;
-                end
-                INTT_WRITE: begin
-                    ram_addr_a      <= j[8:0];
-                    ram_addr_b      <= j + t;
-                    ram_wdata_a_reg <= add_z;  
-                    ram_wdata_b_reg <= mul_z;  
-                    ram_we_a        <= 1'b1;
-                    ram_we_b        <= 1'b1;
-                    j               <= j + 1'b1;
-                    state           <= INTT_READ;
-                end
-                FIN_READ: begin
-                    if (u_cnt < 10'd512) begin
-                        ram_addr_a <= u_cnt[8:0];
-                        state      <= FIN_WAIT;
-                    end else begin
-                        state <= DONE_STATE;
-                    end
-                end
-                FIN_WAIT: begin
-                    state <= FIN_WRITE;
-                end
-                FIN_WRITE: begin
-                    ram_addr_a      <= u_cnt[8:0];
-                    ram_wdata_a_reg <= mul_z; 
-                    ram_we_a        <= 1'b1;
-                    u_cnt           <= u_cnt + 1'b1;
-                    state           <= FIN_READ;
-                end
-                DONE_STATE: begin
-                    done  <= 1'b1;
-                    state <= IDLE;
-                end
-            endcase
+                endcase
+            end 
         end
     end
 endmodule

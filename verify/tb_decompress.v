@@ -18,10 +18,6 @@ module decompress_tb();
 
     wire        valid_fmt;
     wire        done;
-
-    // =========================================================================
-    // 1. MÔ HÌNH RAM ĐỒNG BỘ & GOLDEN DATA
-    // =========================================================================
     reg [7:0]  mem_sig     [0:STR_BYTES-1];
     reg [7:0]  mem_sig_ref [0:STR_BYTES-1];
     reg [15:0] mem_s2      [0:N-1];
@@ -38,10 +34,6 @@ module decompress_tb();
             mem_s2[ram_s2_addr] <= ram_s2_wdata;
         end
     end
-
-    // =========================================================================
-    // 2. KHỞI TẠO DUT
-    // =========================================================================
     decompress #(
         .N(N),
         .STR_BYTES(STR_BYTES)
@@ -56,11 +48,7 @@ module decompress_tb();
         .ram_s2_we     (ram_s2_we),
         .valid_fmt     (valid_fmt),
         .done          (done)
-    );
-
-    // =========================================================================
-    // 3. BỘ THEO DÕI NỘI BỘ (CHỤP ĐÚNG KHOẢNH KHẮC NHẢY VÀO S_REJECT)
-    // =========================================================================
+    )
     reg [3:0]  prev_dut_state;
     reg [3:0]  rej_from_state;
     reg [8:0]  rej_coeff_idx;
@@ -113,10 +101,6 @@ module decompress_tb();
             endcase
         end
     endtask
-
-    // =========================================================================
-    // 4. TASK CHẠY DUT & DỌN RAM
-    // =========================================================================
     integer cyc_cnt;
     integer total_fail;
     integer i, err_cnt, x_cnt;
@@ -154,10 +138,6 @@ module decompress_tb();
             end
         end
     endtask
-
-    // =========================================================================
-    // 5. KỊCH BẢN KIỂM THỬ CHI TIẾT
-    // =========================================================================
     initial begin
         rst_n      = 1'b0;
         start      = 1'b0;
@@ -179,10 +159,6 @@ module decompress_tb();
         $display("\n===========================================================================");
         $display("  STANDALONE TESTBENCH (VERBOSE PROOF): sig_decompress (FALCON-512)");
         $display("===========================================================================");
-
-        // ---------------------------------------------------------------------
-        // CASE 1: IN ĐẦY ĐỦ 512 DÒNG ĐỐI CHIẾU HW vs C EXPECTED
-        // ---------------------------------------------------------------------
         $display("\n[CASE 1] Valid Signature from C Reference");
         $write("  First 16 input bytes (tb_sig_comp.txt): ");
         for (i = 0; i < 16; i = i + 1) $write("%02X ", mem_sig_ref[i]);

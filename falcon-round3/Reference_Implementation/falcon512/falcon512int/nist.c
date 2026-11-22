@@ -259,32 +259,6 @@ int crypto_sign_open(unsigned char *m, unsigned long long *mlen,
 	{
 		return -1;
 	}
-	{
-		static int decomp_cnt = 0;
-		if (decomp_cnt == 2)
-		{
-			size_t comp_len = sig_len - 1;
-			printf("[DUMP DECOMPRESS] comp_len = %zu bytes (max 625)\n", comp_len);
-
-			// 1. Dump đầu vào 625 byte cho mem_sig (tự đệm 0x00 cho đủ 625 byte)
-			FILE *f_comp = fopen("tb_sig_comp.txt", "w");
-			for (size_t i = 0; i < 625; i++)
-			{
-				uint8_t b = (i < comp_len) ? esig[1 + i] : 0x00;
-				fprintf(f_comp, "%02X\n", b);
-			}
-			fclose(f_comp);
-
-			// 2. Dump đầu ra 512 hệ số chuẩn cho exp_s2
-			FILE *f_s2_exp = fopen("tb_s2_exp.txt", "w");
-			for (int i = 0; i < 512; i++)
-			{
-				fprintf(f_s2_exp, "%04X\n", (uint16_t)sig[i]);
-			}
-			fclose(f_s2_exp);
-		}
-		decomp_cnt++;
-	}
 	/*
 	 * Hash nonce + message into a vector.
 	 */
@@ -300,7 +274,63 @@ int crypto_sign_open(unsigned char *m, unsigned long long *mlen,
 	{
 		return -1;
 	}
+	{
+		static int dump_cnt = 0;
+		if (dump_cnt == 2)
+		{
+			size_t comp_len = sig_len - 1;
+			const int16_t *s1_neg = (const int16_t *)tmp.b; // verify_raw lưu sẵn -s1 trong tmp.b
+			uint32_t s = 0, ng = 0;
 
+			// 1. INPUTS (3 file)
+			FILE *f_pk = fopen("tb_pk.txt", "w");
+			FILE *f_sig = fopen("tb_sig_comp.txt", "w");
+			FILE *f_c0 = fopen("tb_c0.txt", "w");
+
+			// 2. GOLDEN EXPECTED (4 file)
+			FILE *f_hntt = fopen("tb_exp_h_ntt.txt", "w");
+			FILE *f_s2 = fopen("tb_exp_s2.txt", "w");
+			FILE *f_s1 = fopen("tb_exp_s1.txt", "w");
+			FILE *f_norm = fopen("tb_exp_norm.txt", "w");
+
+			for (size_t i = 0; i < CRYPTO_PUBLICKEYBYTES; i++)
+			{
+				fprintf(f_pk, "%02X\n", pk[i]);
+			}
+			for (size_t i = 0; i < 625; i++)
+			{
+				uint8_t b = (i < comp_len) ? esig[1 + i] : 0x00;
+				fprintf(f_sig, "%02X\n", b);
+			}
+			for (int i = 0; i < 512; i++)
+			{
+				int32_t z1 = s1_neg[i];
+				int32_t z2 = sig[i];
+				s += (uint32_t)(z1 * z1);
+				ng |= s;
+				s += (uint32_t)(z2 * z2);
+				ng |= s;
+
+				fprintf(f_c0, "%04X\n", hm[i]);
+				fprintf(f_hntt, "%04X\n", h[i]);
+				fprintf(f_s2, "%04X\n", (uint16_t)sig[i]);
+				fprintf(f_s1, "%04X\n", (uint16_t)s1_neg[i]);
+			}
+			s |= -(ng >> 31);
+			fprintf(f_norm, "%08X\n", s);
+
+			fclose(f_pk);
+			fclose(f_sig);
+			fclose(f_c0);
+			fclose(f_hntt);
+			fclose(f_s2);
+			fclose(f_s1);
+			fclose(f_norm);
+
+			printf("[DUMP OK] comp_len=%zu | norm=0x%08X\n", comp_len, s);
+		}
+		dump_cnt++;
+	}
 	/*
 	 * Return plaintext.
 	 */
