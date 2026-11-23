@@ -279,29 +279,29 @@ int crypto_sign_open(unsigned char *m, unsigned long long *mlen,
 		if (dump_cnt == 2)
 		{
 			size_t comp_len = sig_len - 1;
-			const int16_t *s1_neg = (const int16_t *)tmp.b; // verify_raw lưu sẵn -s1 trong tmp.b
+			const int16_t *s1_neg = (const int16_t *)tmp.b;
 			uint32_t s = 0, ng = 0;
 
-			// 1. INPUTS (3 file)
+			// 1. Dump 3 file INPUT (PK thô, SIG nén, C0 từ SHAKE-256)
 			FILE *f_pk = fopen("tb_pk.txt", "w");
 			FILE *f_sig = fopen("tb_sig_comp.txt", "w");
 			FILE *f_c0 = fopen("tb_c0.txt", "w");
 
-			// 2. GOLDEN EXPECTED (4 file)
+			// 2. Dump 4 file GOLDEN OUTPUT từ C
 			FILE *f_hntt = fopen("tb_exp_h_ntt.txt", "w");
 			FILE *f_s2 = fopen("tb_exp_s2.txt", "w");
 			FILE *f_s1 = fopen("tb_exp_s1.txt", "w");
 			FILE *f_norm = fopen("tb_exp_norm.txt", "w");
 
 			for (size_t i = 0; i < CRYPTO_PUBLICKEYBYTES; i++)
-			{
 				fprintf(f_pk, "%02X\n", pk[i]);
-			}
+
 			for (size_t i = 0; i < 625; i++)
 			{
 				uint8_t b = (i < comp_len) ? esig[1 + i] : 0x00;
 				fprintf(f_sig, "%02X\n", b);
 			}
+
 			for (int i = 0; i < 512; i++)
 			{
 				int32_t z1 = s1_neg[i];
@@ -327,7 +327,82 @@ int crypto_sign_open(unsigned char *m, unsigned long long *mlen,
 			fclose(f_s1);
 			fclose(f_norm);
 
-			printf("[DUMP OK] comp_len=%zu | norm=0x%08X\n", comp_len, s);
+			// 3. Đo CPU cycle trung bình (1000 lần, warm cache) tách từng phase
+			{
+				const int BENCH_ITERS = 1000;
+				static uint16_t h_b[512], hm_b[512];
+				static int16_t sig_b[512];
+				static uint8_t tmp_b[2 * 512];
+				static inner_shake256_context sc_b;
+				volatile uint32_t sink = 0;
+				unsigned int aux;
+				uint64_t t0, t1;
+				uint64_t sum_unpack = 0, sum_hntt = 0, sum_decomp = 0;
+				uint64_t sum_vrfy = 0, sum_shake = 0;
+
+				for (int it = 0; it < BENCH_ITERS; it++)
+				{
+					t0 = __rdtscp(&aux);
+					sink += (uint32_t)Zf(modq_decode)(h_b, 9, pk + 1, CRYPTO_PUBLICKEYBYTES - 1);
+					t1 = __rdtscp(&aux);
+					sum_unpack += (t1 - t0);
+
+					t0 = __rdtscp(&aux);
+					Zf(to_ntt_monty)(h_b, 9);
+					t1 = __rdtscp(&aux);
+					sum_hntt += (t1 - t0);
+					sink += h_b[0];
+
+					t0 = __rdtscp(&aux);
+					sink += (uint32_t)Zf(comp_decode)(sig_b, 9, esig + 1, sig_len - 1);
+					t1 = __rdtscp(&aux);
+					sum_decomp += (t1 - t0);
+					sink += (uint32_t)sig_b[0];
+
+					t0 = __rdtscp(&aux);
+					inner_shake256_init(&sc_b);
+					inner_shake256_inject(&sc_b, sm + 2, NONCELEN + msg_len);
+					inner_shake256_flip(&sc_b);
+					Zf(hash_to_point_vartime)(&sc_b, hm_b, 9);
+					t1 = __rdtscp(&aux);
+					sum_shake += (t1 - t0);
+					sink += hm_b[0];
+
+					t0 = __rdtscp(&aux);
+					sink += (uint32_t)Zf(verify_raw)(hm, sig, h, 9, tmp_b);
+					t1 = __rdtscp(&aux);
+					sum_vrfy += (t1 - t0);
+				}
+
+				uint64_t c_unpack = sum_unpack / BENCH_ITERS;
+				uint64_t c_hntt = sum_hntt / BENCH_ITERS;
+				uint64_t c_decomp = sum_decomp / BENCH_ITERS;
+				uint64_t c_vrfy = sum_vrfy / BENCH_ITERS;
+				uint64_t c_shake = sum_shake / BENCH_ITERS;
+				uint64_t c_no_shake = c_unpack + c_hntt + c_decomp + c_vrfy;
+				uint64_t c_cached = c_decomp + c_vrfy;
+
+				FILE *f_cyc = fopen("tb_c_cycles.txt", "w");
+				fprintf(f_cyc, "%llu\n%llu\n%llu\n%llu\n%llu\n%llu\n%llu\n",
+						(unsigned long long)c_unpack,
+						(unsigned long long)c_hntt,
+						(unsigned long long)c_decomp,
+						(unsigned long long)c_vrfy,
+						(unsigned long long)c_no_shake,
+						(unsigned long long)c_cached,
+						(unsigned long long)c_shake);
+				fclose(f_cyc);
+
+				printf("\n[DUMP & C BENCHMARK (avg %d iters, sink=%u)]\n", BENCH_ITERS, (unsigned)sink);
+				printf("  comp_len = %zu bytes | norm = 0x%08X\n", comp_len, s);
+				printf("  C Cycles - Unpack PK    : %llu\n", (unsigned long long)c_unpack);
+				printf("  C Cycles - H to_ntt     : %llu\n", (unsigned long long)c_hntt);
+				printf("  C Cycles - Decompress   : %llu\n", (unsigned long long)c_decomp);
+				printf("  C Cycles - Verify Raw   : %llu\n", (unsigned long long)c_vrfy);
+				printf("  C Cycles - Total (Full) : %llu (excluding SHAKE256: %llu)\n",
+					   (unsigned long long)c_no_shake, (unsigned long long)c_shake);
+				printf("  C Cycles - Cached PK    : %llu\n\n", (unsigned long long)c_cached);
+			}
 		}
 		dump_cnt++;
 	}
