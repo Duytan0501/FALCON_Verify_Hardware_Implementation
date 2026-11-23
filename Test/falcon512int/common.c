@@ -30,7 +30,7 @@
  */
 
 #include "inner.h"
-
+#include <stdio.h>
 /* see inner.h */
 void
 Zf(hash_to_point_vartime)(
@@ -279,7 +279,6 @@ Zf(is_short)(
 		ng |= s;
 	}
 	s |= -(ng >> 31);
-
 	return s <= l2bound[logn];
 }
 
