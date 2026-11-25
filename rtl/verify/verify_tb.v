@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module tb_verify_top();
+module verify_tb();
 
     localparam PK_BYTES  = 897;
     localparam SIG_BYTES = 625;
@@ -32,6 +32,7 @@ module tb_verify_top();
     wire        valid_sig_out;
     wire [31:0] norm_out_sig;
     wire [2:0]  err_code;
+
     reg [7:0]  mem_pk_ref  [0:PK_BYTES-1];
     reg [7:0]  mem_sig_ref [0:SIG_BYTES-1];
     reg [15:0] mem_c0_ref  [0:N-1];
@@ -48,10 +49,12 @@ module tb_verify_top();
     integer c_cyc_unpack, c_cyc_hntt, c_cyc_decomp, c_cyc_vrfy;
     integer c_cyc_full, c_cyc_cached, c_cyc_shake;
     reg     has_c_cycles;
+
     initial begin
         clk = 1'b0;
         forever #5 clk = ~clk;
     end
+
     verify_top uut (
         .clk           (clk),
         .rst_n         (rst_n),
@@ -71,6 +74,7 @@ module tb_verify_top();
         .norm_out_sig  (norm_out_sig),
         .err_code      (err_code)
     );
+
     reg       stream_en;
     reg [9:0] pk_idx;
     reg [9:0] sig_idx;
@@ -100,6 +104,7 @@ module tb_verify_top();
             if (c0_valid  && c0_ready)  c0_idx  <= c0_idx  + 10'd1;
         end
     end
+
     reg     is_running;
     integer cyc_total;
     integer cyc_load_phase;
@@ -146,7 +151,7 @@ module tb_verify_top();
             end else begin
                 cyc_total <= cyc_total + 1;
                 case (uut.state)
-                    3'd1: begin // S_LOAD_AND_HNTT
+                    3'd1: begin
                         cyc_load_phase <= cyc_load_phase + 1;
                         if (uut.pk_sub == 2'd1) cyc_unpack  <= cyc_unpack  + 1;
                         if (uut.pk_sub == 2'd2) cyc_h_ntt   <= cyc_h_ntt   + 1;
@@ -163,10 +168,12 @@ module tb_verify_top();
             end
         end
     end
-    integer fd, scan_ret, k, total_fail;
-    integer err_h, err_s2, err_s1, x_cnt;
+
+    integer fd, scan_ret, k, pass_cnt;
+    integer err_h, err_s2, err_s1, x_cnt, shown_err;
     integer hw_vrfy_raw;
     reg     timeout_flag;
+    reg     case_ok;
 
     task load_clean_inputs;
         integer idx;
@@ -199,72 +206,46 @@ module tb_verify_top();
             stream_en = 1'b0;
             if (done !== 1'b1) begin
                 timeout_flag = 1'b1;
-                $display("  [ERROR] TIMEOUT sau %0d cycles! (uut.state=%0d, pk_sub=%0d)",
-                         wd, uut.state, uut.pk_sub);
+                $display("  [TIMEOUT] sau %0d cyc (state=%0d, pk_sub=%0d)", wd, uut.state, uut.pk_sub);
             end
             @(negedge clk);
         end
     endtask
 
-    task print_phase_report;
+    task print_phases;
         input is_full_mode;
-        integer c_ref_total;
-        real    ratio_val;
+        integer c_ref;
         begin
             hw_vrfy_raw = cyc_conv + cyc_ntt + cyc_subnorm + cyc_isshort;
-
-            $display("-------------------------------------------------------------------------------------");
-            $display("  HW PER-PHASE CYCLE BREAKDOWN (3-Channel Parallel Stream)");
-            $display("-------------------------------------------------------------------------------------");
-            $display("  [Phase 0 - Parallel Load & H_NTT] : %6d cycles (Wall time)", cyc_load_phase);
-            $display("      |-- Channel 1a: PK Unpack     : %6d cycles (bytes read: %0d/%0d)", cyc_unpack, pk_idx, PK_BYTES);
-            $display("      |-- Channel 1b: H to_ntt      : %6d cycles (overlapped with SIG & C0)", cyc_h_ntt);
-            $display("      |-- Channel 2 : SIG Decomp    : %6d cycles (bytes read: %0d/%0d)", cyc_decomp, sig_idx, SIG_BYTES);
-            $display("      |-- Channel 3 : C0 Stream     : %6d cycles (words read: %0d/%0d)", cyc_c0_load, c0_idx, N);
-            $display("  [Phase 1 - poly_convert_s2]       : %6d cycles", cyc_conv);
-            $display("  [Phase 2 - NTT + PWM + iNTT]      : %6d cycles", cyc_ntt);
-            $display("  [Phase 3 - poly_sub_norm (-s1)]   : %6d cycles", cyc_subnorm);
-            $display("  [Phase 4 - is_short_engine]       : %6d cycles", cyc_isshort);
-            $display("  [Overhead - DONE/REJECT state]    : %6d cycles", cyc_finish);
-            $display("  -----------------------------------------------------------------------------------");
-            $display("  TOTAL HW CYCLES                   : %6d cycles (verify_raw core = %0d)", cyc_total, hw_vrfy_raw);
-
-            if (has_c_cycles) begin
-                c_ref_total = is_full_mode ? c_cyc_full : c_cyc_cached;
-                ratio_val   = (cyc_total > 0) ? (1.0 * c_ref_total / cyc_total) : 0.0;
-                $display("-------------------------------------------------------------------------------------");
-                $display("  HW (RTL) vs C (x86 CPU __rdtscp) CYCLE COMPARISON (Excluding SHAKE-256)");
-                $display("-------------------------------------------------------------------------------------");
-                $display("  | Stage               |  HW RTL (cyc)  |  C CPU (cyc)   |  Ratio (C / HW) |");
-                $display("  |---------------------|----------------|----------------|-----------------|");
-                if (is_full_mode) begin
-                    $display("  | Unpack PK           | %14d | %14d | %14.2fx |",
-                             cyc_unpack, c_cyc_unpack, (cyc_unpack > 0) ? (1.0 * c_cyc_unpack / cyc_unpack) : 0.0);
-                    $display("  | H to_ntt_monty      | %14d | %14d | %14.2fx |",
-                             cyc_h_ntt, c_cyc_hntt, (cyc_h_ntt > 0) ? (1.0 * c_cyc_hntt / cyc_h_ntt) : 0.0);
-                end
-                $display("  | Decompress SIG      | %14d | %14d | %14.2fx |",
-                         cyc_decomp, c_cyc_decomp, (cyc_decomp > 0) ? (1.0 * c_cyc_decomp / cyc_decomp) : 0.0);
-                $display("  | Verify Raw (P1..P4) | %14d | %14d | %14.2fx |",
-                         hw_vrfy_raw, c_cyc_vrfy, (hw_vrfy_raw > 0) ? (1.0 * c_cyc_vrfy / hw_vrfy_raw) : 0.0);
-                $display("  |---------------------|----------------|----------------|-----------------|");
-                $display("  | TOTAL (No SHAKE256) | %14d | %14d | %14.2fx |",
-                         cyc_total, c_ref_total, ratio_val);
-                $display("  (Reference only: C SHAKE-256 + HashToPoint = %0d cycles)", c_cyc_shake);
+            if (is_full_mode) begin
+                $display("  P0_Load : %0d cyc (unpack=%0d, h_ntt=%0d, decomp=%0d, c0=%0d)",
+                         cyc_load_phase, cyc_unpack, cyc_h_ntt, cyc_decomp, cyc_c0_load);
+            end else begin
+                $display("  P0_Load : %0d cyc (decomp=%0d, c0=%0d)",
+                         cyc_load_phase, cyc_decomp, cyc_c0_load);
             end
-            $display("-------------------------------------------------------------------------------------");
+            $display("  P1..P4  : conv=%0d | ntt=%0d | subnorm=%0d | is_short=%0d (core=%0d)",
+                     cyc_conv, cyc_ntt, cyc_subnorm, cyc_isshort, hw_vrfy_raw);
+            if (has_c_cycles) begin
+                c_ref = is_full_mode ? c_cyc_full : c_cyc_cached;
+                if (is_full_mode)
+                    $display("  Total   : HW=%0d cyc | C=%0d cyc (%.2fx) [C_shake=%0d]",
+                             cyc_total, c_ref, (cyc_total > 0) ? (1.0 * c_ref / cyc_total) : 0.0, c_cyc_shake);
+                else
+                    $display("  Total   : HW=%0d cyc | C=%0d cyc (%.2fx)",
+                             cyc_total, c_ref, (cyc_total > 0) ? (1.0 * c_ref / cyc_total) : 0.0);
+            end else begin
+                $display("  Total   : HW=%0d cyc", cyc_total);
+            end
         end
     endtask
 
-    // =========================================================================
-    // 6. KỊCH BẢN KIỂM THỬ TỔNG
-    // =========================================================================
     initial begin
         rst_n        = 1'b0;
         start        = 1'b0;
         load_pk      = 1'b1;
         stream_en    = 1'b0;
-        total_fail   = 0;
+        pass_cnt     = 0;
         has_c_cycles = 1'b0;
 
         $readmemh("tb_pk.txt",        mem_pk_ref);
@@ -276,7 +257,7 @@ module tb_verify_top();
 
         if (^mem_pk_ref[0] === 1'bx || ^mem_sig_ref[0] === 1'bx || ^mem_c0_ref[0] === 1'bx ||
             ^exp_h[0]      === 1'bx || ^exp_s2[0]      === 1'bx || ^exp_s1[0]     === 1'bx) begin
-            $display("[FATAL] Thieu hoac loi doc file .txt dump tu C (du lieu chua X)!");
+            $display("[FATAL] Thieu hoac loi doc file .txt dump tu C!");
             $finish;
         end
 
@@ -295,166 +276,98 @@ module tb_verify_top();
                                c_cyc_full, c_cyc_cached, c_cyc_shake);
             $fclose(fd);
             if (scan_ret == 7) has_c_cycles = 1'b1;
-        end else begin
-            $display("[WARN] Chua tim thay tb_c_cycles.txt -> chi in cycle phan cung.");
         end
 
         repeat (5) @(posedge clk);
         rst_n = 1'b1;
         repeat (2) @(posedge clk);
 
-        $display("\n=====================================================================================");
-        $display("  FALCON-512 VERIFY TOP TESTBENCH (3-CHANNEL PARALLEL STREAM + 4 INTERNAL SRAMS)");
-        $display("=====================================================================================");
-
-        // =====================================================================
-        // CASE 1: FULL VERIFY (load_pk = 1) - IN ĐỦ 512 DÒNG + SO SÁNH CYCLE
-        // =====================================================================
-        $display("\n[CASE 1] Full Verify Flow (load_pk = 1, 3 Streams in Parallel)");
+        // CASE 1: FULL VERIFY (load_pk = 1)
         load_clean_inputs();
         run_verify(1'b1);
 
-        $display("=====================================================================================");
-        $display("| Idx |   Unpack+NTT (u_ram_h)  |  Decompress (u_ram_s2)  |   SubNorm (u_ram_tt)    |");
-        $display("|     | HW Out == C Exp  [Stat] | HW Out == C Exp  [Stat] | HW Out == C Exp  [Stat] |");
-        $display("=====================================================================================");
-
-        err_h  = 0;
-        err_s2 = 0;
-        err_s1 = 0;
-        x_cnt  = 0;
-
+        err_h = 0; err_s2 = 0; err_s1 = 0; x_cnt = 0; shown_err = 0;
         for (k = 0; k < N; k = k + 1) begin
             if (^uut.u_ram_h.mem[k]  === 1'bx || ^uut.u_ram_s2.mem[k] === 1'bx || ^uut.u_ram_tt.mem[k] === 1'bx)
                 x_cnt = x_cnt + 1;
             if (uut.u_ram_h.mem[k]  !== exp_h[k])  err_h  = err_h  + 1;
             if (uut.u_ram_s2.mem[k] !== exp_s2[k]) err_s2 = err_s2 + 1;
             if (uut.u_ram_tt.mem[k] !== exp_s1[k]) err_s1 = err_s1 + 1;
-
-            $display("| %03d |  %04h  ==  %04h   [%2s]  |  %04h  ==  %04h   [%2s]  |  %04h  ==  %04h   [%2s]  |",
-                     k,
-                     uut.u_ram_h.mem[k],  exp_h[k],  (uut.u_ram_h.mem[k]  === exp_h[k])  ? "OK" : "ER",
-                     uut.u_ram_s2.mem[k], exp_s2[k], (uut.u_ram_s2.mem[k] === exp_s2[k]) ? "OK" : "ER",
-                     uut.u_ram_tt.mem[k], exp_s1[k], (uut.u_ram_tt.mem[k] === exp_s1[k]) ? "OK" : "ER"
-            );
-        end
-        $display("=====================================================================================");
-        $display("  Errors -> h_ntt: %0d/512 | s2: %0d/512 | -s1: %0d/512 | X/Z: %0d",
-                 err_h, err_s2, err_s1, x_cnt);
-        $display("  Norm   -> HW: 0x%08X | EXP (C): 0x%08X | Match: %s",
-                 norm_out_sig, exp_norm, (norm_out_sig === exp_norm) ? "OK" : "ERROR");
-        $display("  Status -> valid_sig_out = %b | err_code = %0d (expect 0=ERR_NONE)",
-                 valid_sig_out, err_code);
-
-        print_phase_report(1'b1);
-
-        if (!timeout_flag && err_h == 0 && err_s2 == 0 && err_s1 == 0 && x_cnt == 0 &&
-            norm_out_sig === exp_norm && valid_sig_out === 1'b1 && err_code === ERR_NONE) begin
-            $display("  >>> [CASE 1 PASS] FULL VERIFY BIT-EXACT MATCH!");
-        end else begin
-            $display("  >>> [CASE 1 FAIL]");
-            total_fail = total_fail + 1;
+            if ((uut.u_ram_h.mem[k] !== exp_h[k] || uut.u_ram_s2.mem[k] !== exp_s2[k] || uut.u_ram_tt.mem[k] !== exp_s1[k]) && shown_err < 5) begin
+                $display("  [MISMATCH idx=%0d] h:%04h/%04h s2:%04h/%04h s1:%04h/%04h",
+                         k, uut.u_ram_h.mem[k], exp_h[k], uut.u_ram_s2.mem[k], exp_s2[k], uut.u_ram_tt.mem[k], exp_s1[k]);
+                shown_err = shown_err + 1;
+            end
         end
 
-        // =====================================================================
-        // CASE 2: CACHED PK FLOW (load_pk = 0) - TÁI SỬ DỤNG u_ram_h
-        // =====================================================================
-        $display("\n[CASE 2] Cached PK Verify Flow (load_pk = 0, Reuse u_ram_h)");
+        case_ok = !timeout_flag && err_h == 0 && err_s2 == 0 && err_s1 == 0 && x_cnt == 0 &&
+                  norm_out_sig === exp_norm && valid_sig_out === 1'b1 && err_code === ERR_NONE;
+        if (case_ok) pass_cnt = pass_cnt + 1;
+
+        $display("\n[CASE 1] Full Verify (load_pk=1): %s", case_ok ? "PASS" : "FAIL");
+        $display("  Check   : h_err=%0d s2_err=%0d s1_err=%0d x=%0d | norm=0x%08h (exp 0x%08h) | valid=%b err=%0d",
+                 err_h, err_s2, err_s1, x_cnt, norm_out_sig, exp_norm, valid_sig_out, err_code);
+        print_phases(1'b1);
+
+        // CASE 2: CACHED PK (load_pk = 0)
         load_clean_inputs();
-        mem_pk[0] = 8'hFF; // Cố tình phá PK để chứng minh kênh PK không hề được đọc
+        mem_pk[0] = 8'hFF;
         run_verify(1'b0);
 
-        err_s2 = 0;
-        err_s1 = 0;
+        err_s2 = 0; err_s1 = 0;
         for (k = 0; k < N; k = k + 1) begin
             if (uut.u_ram_s2.mem[k] !== exp_s2[k]) err_s2 = err_s2 + 1;
             if (uut.u_ram_tt.mem[k] !== exp_s1[k]) err_s1 = err_s1 + 1;
         end
 
-        $display("  Errors -> s2: %0d/512 | -s1: %0d/512 | pk_bytes_consumed: %0d (expect 0)",
-                 err_s2, err_s1, pk_idx);
-        $display("  Norm   -> HW: 0x%08X | EXP (C): 0x%08X | valid=%b | err_code=%0d",
-                 norm_out_sig, exp_norm, valid_sig_out, err_code);
+        case_ok = !timeout_flag && pk_idx == 10'd0 && cyc_unpack == 0 && cyc_h_ntt == 0 &&
+                  err_s2 == 0 && err_s1 == 0 && norm_out_sig === exp_norm &&
+                  valid_sig_out === 1'b1 && err_code === ERR_NONE;
+        if (case_ok) pass_cnt = pass_cnt + 1;
 
-        print_phase_report(1'b0);
+        $display("\n[CASE 2] Cached PK (load_pk=0): %s", case_ok ? "PASS" : "FAIL");
+        $display("  Check   : s2_err=%0d s1_err=%0d pk_read=%0d | norm=0x%08h | valid=%b err=%0d",
+                 err_s2, err_s1, pk_idx, norm_out_sig, valid_sig_out, err_code);
+        print_phases(1'b0);
 
-        if (!timeout_flag && pk_idx == 10'd0 && cyc_unpack == 0 && cyc_h_ntt == 0 &&
-            err_s2 == 0 && err_s1 == 0 && norm_out_sig === exp_norm &&
-            valid_sig_out === 1'b1 && err_code === ERR_NONE) begin
-            $display("  >>> [CASE 2 PASS] CACHED PK REUSE VERIFIED!");
-        end else begin
-            $display("  >>> [CASE 2 FAIL]");
-            total_fail = total_fail + 1;
-        end
-
-        // =====================================================================
-        // CASE 3: FAIL-FAST BAD PK HEADER (0x0A) KHI 3 KÊNH ĐANG STREAM SONG SONG
-        // =====================================================================
-        $display("\n[CASE 3] Fail-Fast Abort: Bad PK Header (0x0A)");
+        // CASE 3: BAD PK HEADER
         load_clean_inputs();
         mem_pk[0] = 8'h0A;
         run_verify(1'b1);
+        case_ok = !timeout_flag && valid_sig_out === 1'b0 && err_code === ERR_BAD_PK && cyc_total < 50;
+        if (case_ok) pass_cnt = pass_cnt + 1;
+        $display("\n[CASE 3] Bad PK Header   : %s (valid=%b err=%0d cyc=%0d)",
+                 case_ok ? "PASS" : "FAIL", valid_sig_out, err_code, cyc_total);
 
-        $display("  Result -> valid=%b | err_code=%0d (expect 1=ERR_BAD_PK) | cycles=%0d | pk=%0d sig=%0d c0=%0d",
-                 valid_sig_out, err_code, cyc_total, pk_idx, sig_idx, c0_idx);
-
-        if (!timeout_flag && valid_sig_out === 1'b0 && err_code === ERR_BAD_PK && cyc_total < 50) begin
-            $display("  >>> [CASE 3 PASS] Aborted early on bad PK header!");
-        end else begin
-            $display("  >>> [CASE 3 FAIL]");
-            total_fail = total_fail + 1;
-        end
-
-        // =====================================================================
-        // CASE 4: FAIL-FAST BAD SIG PADDING (BYTE 624 |= 0x01) - NGẮT H_NTT GIỮA CHỪNG
-        // =====================================================================
-        $display("\n[CASE 4] Fail-Fast Abort: Bad SIG Trailing Padding (Interrupts H_NTT mid-flight)");
+        // CASE 4: BAD SIG PADDING
         load_clean_inputs();
         mem_sig[SIG_BYTES-1] = mem_sig[SIG_BYTES-1] | 8'h01;
         run_verify(1'b1);
+        case_ok = !timeout_flag && valid_sig_out === 1'b0 && err_code === ERR_BAD_SIG_FMT &&
+                  cyc_conv == 0 && cyc_ntt == 0;
+        if (case_ok) pass_cnt = pass_cnt + 1;
+        $display("[CASE 4] Bad SIG Padding : %s (valid=%b err=%0d cyc=%0d h_ntt_stop=%0d)",
+                 case_ok ? "PASS" : "FAIL", valid_sig_out, err_code, cyc_total, cyc_h_ntt);
 
-        $display("  Result -> valid=%b | err_code=%0d (expect 2=ERR_BAD_SIG_FMT) | total_cyc=%0d | h_ntt_interrupted_at=%0d",
-                 valid_sig_out, err_code, cyc_total, cyc_h_ntt);
-
-        if (!timeout_flag && valid_sig_out === 1'b0 && err_code === ERR_BAD_SIG_FMT &&
-            cyc_conv == 0 && cyc_ntt == 0) begin
-            $display("  >>> [CASE 4 PASS] Aborted cleanly on bad SIG padding!");
-        end else begin
-            $display("  >>> [CASE 4 FAIL]");
-            total_fail = total_fail + 1;
-        end
-
-        // =====================================================================
-        // CASE 5: BAD NORM (LÀM LỆCH 8 HỆ SỐ ĐẦU CỦA C0 -> VƯỢT NGƯỠNG 34,034,726)
-        // =====================================================================
-        $display("\n[CASE 5] Bad Norm Rejection (Perturbed c0[0..7], Valid PK & SIG)");
+        // CASE 5: BAD NORM
         load_clean_inputs();
         for (k = 0; k < 8; k = k + 1) begin
             mem_c0[k] = (mem_c0[k] >= 16'd8289) ? (mem_c0[k] - 16'd8289) : (mem_c0[k] + 16'd4000);
         end
         run_verify(1'b1);
+        case_ok = !timeout_flag && valid_sig_out === 1'b0 && err_code === ERR_BAD_NORM &&
+                  norm_out_sig > 32'd34034726;
+        if (case_ok) pass_cnt = pass_cnt + 1;
+        $display("[CASE 5] Bad Norm        : %s (valid=%b err=%0d norm=%0d cyc=%0d)",
+                 case_ok ? "PASS" : "FAIL", valid_sig_out, err_code, norm_out_sig, cyc_total);
 
-        $display("  Result -> valid=%b | err_code=%0d (expect 3=ERR_BAD_NORM) | HW norm=%0d (> 34034726) | cycles=%0d",
-                 valid_sig_out, err_code, norm_out_sig, cyc_total);
+        // SUMMARY
+        if (pass_cnt == 5)
+            $display("\nRESULT: PASS 5/5\n");
+        else
+            $display("\nRESULT: FAIL (%0d/5 passed)\n", pass_cnt);
 
-        if (!timeout_flag && valid_sig_out === 1'b0 && err_code === ERR_BAD_NORM &&
-            norm_out_sig > 32'd34034726) begin
-            $display("  >>> [CASE 5 PASS] Rejected oversized signature norm!");
-        end else begin
-            $display("  >>> [CASE 5 FAIL]");
-            total_fail = total_fail + 1;
-        end
-
-        // =====================================================================
-        // TỔNG KẾT
-        // =====================================================================
-        $display("\n=====================================================================================");
-        if (total_fail == 0) begin
-            $display("  FINAL VERDICT: ALL 5 TEST CASES PASSED!");
-        end else begin
-            $display("  FINAL VERDICT: FAILED %0d / 5 TEST CASES!", total_fail);
-        end
-        $display("=====================================================================================\n");
         $finish;
     end
+
 endmodule

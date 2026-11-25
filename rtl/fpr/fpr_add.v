@@ -9,10 +9,6 @@ module fpr_add (
     output reg         out_valid,
     output reg  [63:0] z
 );
-
-    // =========================================================================
-    // STAGE 1: CONDITIONAL MAGNITUDE SWAP, UNPACK & EXPONENT DIFF
-    // =========================================================================
     wire               swap_en = (x[62:0] < y[62:0]) || ((x[62:0] == y[62:0]) && x[63]);
     wire [63:0]        xa      = swap_en ? y : x;
     wire [63:0]        ya      = swap_en ? x : y;
@@ -38,7 +34,6 @@ module fpr_add (
     reg [55:0]         s1_yu;
     reg [5:0]          s1_cc;
     reg                s1_ge60;
-
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             s1_valid   <= 1'b0;
@@ -62,38 +57,26 @@ module fpr_add (
             end
         end
     end
-
-    // =========================================================================
-    // STAGE 2: 6-LEVEL BARREL RIGHT-SHIFT + STICKY ALIGNMENT
-    // =========================================================================
     wire [55:0] r5  = s1_cc[5] ? {32'd0, s1_yu[55:32]} : s1_yu;
     wire        st5 = s1_cc[5] && (|s1_yu[31:0]);
-
     wire [55:0] r4  = s1_cc[4] ? {16'd0, r5[55:16]} : r5;
     wire        st4 = s1_cc[4] && (|r5[15:0]);
-
     wire [55:0] r3  = s1_cc[3] ? {8'd0, r4[55:8]} : r4;
     wire        st3 = s1_cc[3] && (|r4[7:0]);
-
     wire [55:0] r2  = s1_cc[2] ? {4'd0, r3[55:4]} : r3;
     wire        st2 = s1_cc[2] && (|r3[3:0]);
-
     wire [55:0] r1  = s1_cc[1] ? {2'd0, r2[55:2]} : r2;
     wire        st1 = s1_cc[1] && (|r2[1:0]);
-
     wire [55:0] r0  = s1_cc[0] ? {1'b0, r1[55:1]} : r1;
     wire        st0 = s1_cc[0] && r1[0];
-
     wire        sticky_align = st5 | st4 | st3 | st2 | st1 | st0;
     wire [55:0] yu_aligned   = s1_ge60 ? 56'd0 : (r0 | {55'd0, sticky_align});
-
     reg               s2_valid;
     reg               s2_sx;
     reg               s2_eff_sub;
     reg signed [12:0] s2_ex;
     reg [55:0]        s2_xu;
     reg [55:0]        s2_yu_al;
-
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             s2_valid   <= 1'b0;
@@ -113,13 +96,8 @@ module fpr_add (
             end
         end
     end
-
-    // =========================================================================
-    // STAGE 3: 57-BIT ADD/SUB + BALANCED BINARY-TREE LZC (64-BIT)
-    // =========================================================================
     wire [56:0] xu_sum_w = s2_eff_sub ? ({1'b0, s2_xu} - {1'b0, s2_yu_al})
                                       : ({1'b0, s2_xu} + {1'b0, s2_yu_al});
-
     wire [63:0] n0     = {7'd0, xu_sum_w};
     wire        v_hi32 = (|n0[63:32]);
     wire [31:0] v32    = v_hi32 ? n0[63:32] : n0[31:0];
@@ -132,15 +110,12 @@ module fpr_add (
     wire        v_hi2  = (|v4[3:2]);
     wire [1:0]  v2     = v_hi2  ? v4[3:2]    : v4[1:0];
     wire        v_hi1  = v2[1];
-
     wire [5:0]  lzc_w  = {~v_hi32, ~v_hi16, ~v_hi8, ~v_hi4, ~v_hi2, ~v_hi1};
-
     reg               s3_valid;
     reg               s3_sx;
     reg signed [12:0] s3_ex;
     reg [56:0]        s3_xu_sum;
     reg [5:0]         s3_lzc;
-
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             s3_valid  <= 1'b0;
@@ -158,10 +133,6 @@ module fpr_add (
             end
         end
     end
-
-    // =========================================================================
-    // STAGE 4: LEFT-SHIFT || EXP-ADJUST -> STICKY-9 -> fpr_pack -> OUTPUT REG
-    // =========================================================================
     wire [63:0]        xu_norm   = {7'd0, s3_xu_sum} << s3_lzc;
     wire signed [12:0] ex_final  = s3_ex - $signed({7'd0, s3_lzc}) + 13'sd9;
     wire               sticky_9  = (|xu_norm[8:0]);
